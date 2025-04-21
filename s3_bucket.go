@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 
@@ -176,17 +175,19 @@ func newS3BucketBase(ctx context.Context, client *http.Client, options S3Options
 		return nil, errors.New("ambiguous delete on sync options set")
 	}
 
-	config := configOpts{
+	conf := configOpts{
 		region:                    options.Region,
 		maxRetries:                aws.ToInt(options.MaxRetries),
 		client:                    client,
 		sharedCredentialsFilepath: options.SharedCredentialsFilepath,
 		sharedCredentialsProfile:  options.SharedCredentialsProfile,
 	}
-	cfg, err := getCachedConfig(ctx, config)
+	cfg, err := getCachedConfig(ctx, conf)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting AWS config")
 	}
+
+	cfg.ClientLogMode = aws.LogRequest | aws.LogResponse | aws.LogResponseWithBody
 
 	var s3Opts []func(*s3.Options)
 	if options.Credentials != nil {
@@ -199,6 +200,10 @@ func newS3BucketBase(ctx context.Context, client *http.Client, options S3Options
 			opts.Credentials = stscreds.NewAssumeRoleProvider(assumeRoleClient, options.AssumeRoleARN, options.AssumeRoleOptions...)
 		})
 	}
+
+	s3Opts = append(s3Opts, func(options *s3.Options) {
+		options.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+	})
 
 	svc := s3.NewFromConfig(*cfg, s3Opts...)
 
@@ -774,11 +779,12 @@ func putHelper(ctx context.Context, b *s3Bucket, key string, r io.Reader) error 
 
 	uploader := s3Manager.NewUploader(b.svc)
 	uploader.Concurrency = getManagerConcurrency()
+	uploader.LeavePartsOnError = true
 
 	key = b.normalizeKey(key)
 
 	input := &s3.PutObjectInput{
-		Body:   s3Manager.ReadSeekCloser(r),
+		Body:   r,
 		Bucket: aws.String(b.name),
 		Key:    aws.String(key),
 		ACL:    s3Types.ObjectCannedACL(string(b.permissions)),
@@ -846,9 +852,10 @@ func getManagerConcurrency() int {
 	// After quite a bit of testing, a minimum of 10 seems to perform the best,
 	// even on distros with fewer than 10 cores. 10 is also what the AWS cli
 	// defaults to. See DEVPROD-16611 for more information on this testing.
-	const minConcurrency = 10
+	// const minConcurrency = 10
 
-	return max(runtime.NumCPU(), minConcurrency)
+	// return max(runtime.NumCPU(), minConcurrency)
+	return 1
 }
 
 // GetToWriter fetches the key from this bucket and writes the contents to
