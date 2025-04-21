@@ -188,6 +188,8 @@ func newS3BucketBase(ctx context.Context, client *http.Client, options S3Options
 		return nil, errors.Wrap(err, "getting AWS config")
 	}
 
+	cfg.ClientLogMode = aws.LogRequest | aws.LogResponse | aws.LogRequestWithBody | aws.LogResponseWithBody
+
 	var s3Opts []func(*s3.Options)
 	if options.Credentials != nil {
 		s3Opts = append(s3Opts, func(opts *s3.Options) {
@@ -778,7 +780,7 @@ func putHelper(ctx context.Context, b *s3Bucket, key string, r io.Reader) error 
 	key = b.normalizeKey(key)
 
 	input := &s3.PutObjectInput{
-		Body:   s3Manager.ReadSeekCloser(r),
+		Body:   r,
 		Bucket: aws.String(b.name),
 		Key:    aws.String(key),
 		ACL:    s3Types.ObjectCannedACL(string(b.permissions)),
