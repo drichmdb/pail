@@ -778,7 +778,7 @@ func putHelper(ctx context.Context, b *s3Bucket, key string, r io.Reader) error 
 	key = b.normalizeKey(key)
 
 	input := &s3.PutObjectInput{
-		Body:   s3Manager.ReadSeekCloser(r),
+		Body:   r,
 		Bucket: aws.String(b.name),
 		Key:    aws.String(key),
 		ACL:    s3Types.ObjectCannedACL(string(b.permissions)),
